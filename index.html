@@ -646,8 +646,9 @@ function buildKPI() {
     `<div class="kpi-card ${cls}">
       <div class="kpi-label">${label}</div>
       <div class="kpi-value">${value}</div>
-      <div class="kpi-sub ${neg ? 'neg' : 'pos'}">${sub}</div>
+      <div class="kpi-sub ${neg === null ? '' : neg ? 'neg' : 'pos'}">${sub}</div>
     </div>`;
+  const fmtPct = (v) => v === null ? '前年比 --' : `前年比 ${v > 0 ? '+' : ''}${v}%`;
 
   // ---- 最新日 ----
   const ld = DATA.daily && DATA.daily.length > 0 ? DATA.daily[DATA.daily.length - 1] : {};
@@ -659,9 +660,9 @@ function buildKPI() {
   const dayLabel = ld.date ? ld.date + '(' + (ld.dow || '') + ')' : '最新日';
   document.getElementById('kpi-day-label').textContent = '最新日　' + dayLabel;
   document.getElementById('kpi-row-day').innerHTML = [
-    card('kpi-sales', '売　上', fmt(ld_sa), `前年比 ${ld_ps}%`, ld_ps < 0),
-    card('kpi-cust',  '客　数', ld_ca + '名', `前年比 ${ld_pc}%`, ld_pc < 0),
-    card('kpi-up',    '客単価', fmt(ld_up), `前年比 ${ld_pu > 0 ? '+' : ''}${ld_pu}%`, ld_pu < 0),
+    card('kpi-sales', '売　上', fmt(ld_sa), fmtPct(ld_ps), ld_ps !== null && ld_ps < 0),
+    card('kpi-cust',  '客　数', ld_ca + '名', fmtPct(ld_pc), ld_pc !== null && ld_pc < 0),
+    card('kpi-up',    '客単価', fmt(ld_up), fmtPct(ld_pu), ld_pu !== null && ld_pu < 0),
   ].join('');
 
   // ---- 最新週 ----
@@ -674,9 +675,9 @@ function buildKPI() {
   const weekLabel = lw.label ? lw.label + '（' + (lw.range || '') + '）' : '最新週';
   document.getElementById('kpi-week-label').textContent = '最新週　' + weekLabel;
   document.getElementById('kpi-row-week').innerHTML = [
-    card('kpi-sales', '売　上', fmt(lw_sa), `前年比 ${lw_ps}%`, lw_ps < 0),
-    card('kpi-cust',  '客　数', lw_ca + '名', `前年比 ${lw_pc}%`, lw_pc < 0),
-    card('kpi-up',    '客単価', fmt(lw_up), `前年比 ${lw_pu > 0 ? '+' : ''}${lw_pu}%`, lw_pu < 0),
+    card('kpi-sales', '売　上', fmt(lw_sa), fmtPct(lw_ps), lw_ps !== null && lw_ps < 0),
+    card('kpi-cust',  '客　数', lw_ca + '名', fmtPct(lw_pc), lw_pc !== null && lw_pc < 0),
+    card('kpi-up',    '客単価', fmt(lw_up), fmtPct(lw_pu), lw_pu !== null && lw_pu < 0),
   ].join('');
 
   // ---- 最新月累計 ----
@@ -689,9 +690,9 @@ function buildKPI() {
   const monthLabel = (lm.label || '最新月') + '累計';
   document.getElementById('kpi-month-label').textContent = '最新月　' + monthLabel;
   document.getElementById('kpi-row-month').innerHTML = [
-    card('kpi-sales kpi-month', '売　上', fmt(lm_sa), `前年比 ${lm_ps}%`, lm_ps < 0),
-    card('kpi-cust  kpi-month', '客　数', lm_ca + '名', `前年比 ${lm_pc}%`, lm_pc < 0),
-    card('kpi-up    kpi-month', '客単価', fmt(lm_up), `前年比 ${lm_pu > 0 ? '+' : ''}${lm_pu}%`, lm_pu < 0),
+    card('kpi-sales kpi-month', '売　上', fmt(lm_sa), fmtPct(lm_ps), lm_ps !== null && lm_ps < 0),
+    card('kpi-cust  kpi-month', '客　数', lm_ca + '名', fmtPct(lm_pc), lm_pc !== null && lm_pc < 0),
+    card('kpi-up    kpi-month', '客単価', fmt(lm_up), fmtPct(lm_pu), lm_pu !== null && lm_pu < 0),
   ].join('');
 }
 
@@ -744,8 +745,10 @@ function buildDailySales() {
 
 // ===================== CHART: Weekly Sales % =====================
 function buildWeeklyPct(canvasId, field_a, field_p, label) {
-  const vals = wKeys.map(w => +pct(weekly[w][field_a], weekly[w][field_p]));
-  const colors = vals.map(v => v >= 0 ? '#27AE60' : '#E74C3C');
+  const rawVals = wKeys.map(w => pct(weekly[w][field_a], weekly[w][field_p]));
+  // null（前年データなし）は0として表示、色はグレーで区別
+  const vals   = rawVals.map(v => v === null ? 0 : v);
+  const colors = rawVals.map(v => v === null ? '#B0BEC5' : v >= 0 ? '#27AE60' : '#E74C3C');
   new Chart(document.getElementById(canvasId), {
     type: 'bar',
     data: { labels: wLabels, datasets: [{ data: vals, backgroundColor: colors, borderRadius:6 }] },
@@ -753,7 +756,10 @@ function buildWeeklyPct(canvasId, field_a, field_p, label) {
       responsive:true, maintainAspectRatio:false,
       plugins: {
         legend:{display:false},
-        tooltip:{ callbacks:{ label: ctx => ctx.raw.toFixed(1)+'%' } }
+        tooltip:{ callbacks:{ label: ctx => {
+          const raw = rawVals[ctx.dataIndex];
+          return raw === null ? '前年データなし' : ctx.raw.toFixed(1)+'%';
+        }}}
       },
       scales: {
         x: { ticks:{font:{size: isSP ? 8.5 : 10}, maxRotation: isSP ? 30 : 0}, grid:{display:false} },
@@ -765,8 +771,8 @@ function buildWeeklyPct(canvasId, field_a, field_p, label) {
 
 // ===================== CHART: Weekly Unit Price =====================
 function buildWeeklyUP() {
-  const ua = wKeys.map(w => Math.round(weekly[w].sales_a / weekly[w].cust_a));
-  const up = wKeys.map(w => Math.round(weekly[w].sales_p / weekly[w].cust_p));
+  const ua = wKeys.map(w => weekly[w].cust_a > 0 ? Math.round(weekly[w].sales_a / weekly[w].cust_a) : null);
+  const up = wKeys.map(w => weekly[w].cust_p > 0 ? Math.round(weekly[w].sales_p / weekly[w].cust_p) : null);
   new Chart(document.getElementById('chart-weekly-up'), {
     type:'line',
     data: { labels: wLabels, datasets: [
@@ -1091,6 +1097,7 @@ function buildAutoComments() {
   const yoyPct = (a, p) => p > 0 ? Math.round((a - p) / p * 100) : null;
   const sign   = v => v >= 0 ? '+' : '';
   const trend  = (first, last) => {
+    if (first === null || last === null) return '';
     if (last > first + 5)  return '改善傾向 ↗';
     if (last < first - 5)  return '悪化傾向 ↘';
     return '横ばい →';
