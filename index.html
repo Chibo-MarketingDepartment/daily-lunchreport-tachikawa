@@ -622,23 +622,30 @@ const chartDefaults = {
 
 // ===================== WEEKLY AGGREGATION =====================
 // daily の week番号（1起算整数）で集計
-const weekly = {};
-(DATA.daily || []).forEach(d => {
-  const w = d.week;
-  if (!weekly[w]) weekly[w] = { sales_a:0, sales_p:0, cust_a:0, cust_p:0 };
-  weekly[w].sales_a += d.sales_a;
-  weekly[w].sales_p += d.sales_p;
-  weekly[w].cust_a  += d.cust_a;
-  weekly[w].cust_p  += d.cust_p;
-});
-const wKeys = Object.keys(weekly).map(Number).sort((a,b)=>a-b);
+// DATA取得後に毎回再計算するため変数とする
+let weekly = {};
+let wKeys = [];
+let wLabels = [];
 
-// weekMetaからラベル生成（動的）。weekMetaのindexとwKeysの順序が対応
-const wLabels = wKeys.map(function(wNum) {
-  const meta = (DATA.weekMeta || [])[wNum - 1];  // week番号は1起算
-  if (meta) return meta.label + '\n' + meta.range;
-  return '第' + wNum + '週';
-});
+function buildWeeklyAggregation() {
+  weekly = {};
+  (DATA.daily || []).forEach(d => {
+    const w = d.week;
+    if (!weekly[w]) weekly[w] = { sales_a:0, sales_p:0, cust_a:0, cust_p:0 };
+    weekly[w].sales_a += d.sales_a;
+    weekly[w].sales_p += d.sales_p;
+    weekly[w].cust_a  += d.cust_a;
+    weekly[w].cust_p  += d.cust_p;
+  });
+  wKeys = Object.keys(weekly).map(Number).sort((a,b)=>a-b);
+
+  // weekMetaからラベル生成（動的）。weekMetaのindexとwKeysの順序が対応
+  wLabels = wKeys.map(function(wNum) {
+    const meta = (DATA.weekMeta || [])[wNum - 1];  // week番号は1起算
+    if (meta) return meta.label + '\n' + meta.range;
+    return '第' + wNum + '週';
+  });
+}
 
 // ===================== KPI CARDS =====================
 function buildKPI() {
@@ -697,7 +704,9 @@ function buildKPI() {
 }
 
 // ===================== CHART: Daily Sales =====================
+let dailySalesChart = null;
 function buildDailySales() {
+  if (dailySalesChart) dailySalesChart.destroy();
   const labels = DATA.daily.map(d => d.date + '\n(' + d.dow + ')');
   const sa = DATA.daily.map(d => d.sales_a);
   const sp = DATA.daily.map(d => d.sales_p);
@@ -708,7 +717,7 @@ function buildDailySales() {
   const a0 = my - b*mx;
   const trend = xs.map(x => a0 + b*x);
 
-  new Chart(document.getElementById('chart-daily-sales'), {
+  dailySalesChart = new Chart(document.getElementById('chart-daily-sales'), {
     data: {
       labels,
       datasets: [
@@ -744,12 +753,14 @@ function buildDailySales() {
 }
 
 // ===================== CHART: Weekly Sales % =====================
+let weeklyPctCharts = {};
 function buildWeeklyPct(canvasId, field_a, field_p, label) {
+  if (weeklyPctCharts[canvasId]) weeklyPctCharts[canvasId].destroy();
   const rawVals = wKeys.map(w => pct(weekly[w][field_a], weekly[w][field_p]));
   // null（前年データなし）は0として表示、色はグレーで区別
   const vals   = rawVals.map(v => v === null ? 0 : v);
   const colors = rawVals.map(v => v === null ? '#B0BEC5' : v >= 0 ? '#27AE60' : '#E74C3C');
-  new Chart(document.getElementById(canvasId), {
+  weeklyPctCharts[canvasId] = new Chart(document.getElementById(canvasId), {
     type: 'bar',
     data: { labels: wLabels, datasets: [{ data: vals, backgroundColor: colors, borderRadius:6 }] },
     options: {
@@ -770,10 +781,12 @@ function buildWeeklyPct(canvasId, field_a, field_p, label) {
 }
 
 // ===================== CHART: Weekly Unit Price =====================
+let weeklyUPChart = null;
 function buildWeeklyUP() {
+  if (weeklyUPChart) weeklyUPChart.destroy();
   const ua = wKeys.map(w => weekly[w].cust_a > 0 ? Math.round(weekly[w].sales_a / weekly[w].cust_a) : null);
   const up = wKeys.map(w => weekly[w].cust_p > 0 ? Math.round(weekly[w].sales_p / weekly[w].cust_p) : null);
-  new Chart(document.getElementById('chart-weekly-up'), {
+  weeklyUPChart = new Chart(document.getElementById('chart-weekly-up'), {
     type:'line',
     data: { labels: wLabels, datasets: [
       { label:'前年単価', data:up, borderColor:'#5B8DB8', backgroundColor:'rgba(91,141,184,0.08)', borderWidth:2, pointRadius:4, tension:0.3 },
@@ -794,7 +807,9 @@ function buildWeeklyUP() {
 }
 
 // ===================== CHART: Day of Week =====================
+let dowChart = null;
 function buildDOW() {
+  if (dowChart) dowChart.destroy();
   const dows = ['月','火','水','木','金'];
   const early_days = DATA.daily.filter(d=>d.week<=2);
   const late_days  = DATA.daily.filter(d=>d.week>=3);
@@ -802,7 +817,7 @@ function buildDOW() {
     const ds = arr.filter(d=>['月','火','水','木','金'].indexOf(d.dow)===i);
     return ds.length ? Math.round(ds.reduce((s,d)=>s+d[key],0)/ds.length) : 0;
   });
-  new Chart(document.getElementById('chart-dow'), {
+  dowChart = new Chart(document.getElementById('chart-dow'), {
     type:'bar',
     data: { labels: dows.map(d=>d+'曜日'), datasets:[
       { label:'前年', data:byDow(DATA.daily,'sales_p'), backgroundColor:'rgba(91,141,184,0.6)', borderRadius:4 },
@@ -1243,6 +1258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (DATA.updatedAt) {
     document.getElementById('updated-at').textContent = 'データ更新: ' + DATA.updatedAt;
   }
+  buildWeeklyAggregation();
   buildComment();
   buildMenuTable();
   buildKPI();
@@ -1264,6 +1280,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (DATA.updatedAt) {
         document.getElementById('updated-at').textContent = 'データ更新: ' + DATA.updatedAt;
       }
+      buildWeeklyAggregation();
       buildComment();
       buildMenuTable();
       buildKPI();
